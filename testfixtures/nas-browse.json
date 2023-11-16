@@ -1,0 +1,60 @@
+{
+    "diskInfo": {
+        "used": 198988000,
+        "total": 3362490000,
+        "free": 3163500000
+    },
+    "files": [],
+    "directories": [
+        {
+            "path": "/Bilder",
+            "shared": false,
+            "storageType": "internal_storage",
+            "type": "directory",
+            "timestamp": 1700007000,
+            "filename": "Bilder"
+        },
+        {
+            "path": "/Dokumente",
+            "shared": false,
+            "storageType": "internal_storage",
+            "type": "directory",
+            "timestamp": 1371816900,
+            "filename": "Dokumente"
+        },
+        {
+            "path": "/FRITZ",
+            "shared": false,
+            "storageType": "internal_storage",
+            "type": "directory",
+            "timestamp": 1694135340,
+            "filename": "FRITZ"
+        },
+        {
+            "path": "/Musik",
+            "shared": false,
+            "storageType": "internal_storage",
+            "type": "directory",
+            "timestamp": 1371820680,
+            "filename": "Musik"
+        },
+        {
+            "path": "/Videos",
+            "shared": false,
+            "storageType": "internal_storage",
+            "type": "directory",
+            "timestamp": 1371820680,
+            "filename": "Videos"
+        }
+    ],
+    "writeRight": true,
+    "browse": {
+        "path": "/",
+        "index": 1,
+        "totalCount": 5,
+        "finished": true,
+        "mode": "file",
+        "limit": 50,
+        "sorting": "+filename"
+    }
+}
