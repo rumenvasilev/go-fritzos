@@ -1,4 +1,4 @@
-package main
+package nas
 
 import (
 	"bytes"
@@ -12,6 +12,9 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/rumenvasilev/go-fritzos/auth"
+	"github.com/rumenvasilev/go-fritzos/request"
 )
 
 const (
@@ -21,21 +24,26 @@ const (
 	rootAPI           = "api/data.lua"
 )
 
-type NASBrowseResponse struct {
-	DiskInfo    NASDiskInfo
-	Files       []NASFile
-	Directories []NASDirectory
-	WriteRight  bool
-	Browse      NASBrowse
+type NAS struct {
+	*auth.SessionID
+	Address string
 }
 
-type NASDiskInfo struct {
+type BrowseResponse struct {
+	DiskInfo    DiskInfo
+	Files       []File
+	Directories []Directory
+	WriteRight  bool
+	Browse      Browse
+}
+
+type DiskInfo struct {
 	Used  float64
 	Total float64
 	Free  float64
 }
 
-type NASFile struct {
+type File struct {
 	Path        string
 	Shared      bool
 	Width       int
@@ -47,7 +55,7 @@ type NASFile struct {
 	Size        int
 }
 
-type NASDirectory struct {
+type Directory struct {
 	Path        string
 	Shared      bool
 	StorageType string
@@ -56,7 +64,7 @@ type NASDirectory struct {
 	Filename    string
 }
 
-type NASBrowse struct {
+type Browse struct {
 	Path       string
 	Index      int
 	TotalCount int
@@ -84,16 +92,16 @@ func (p *Timestamp) UnmarshalJSON(bytes []byte) error {
 
 // ListDirectory would call FRITZ API and return the response structure with results
 // or error.
-func ListDirectory(sessionID string) (*NASBrowseResponse, error) {
-	return ListDirectoryWithParams(sessionID, nil)
+func (n *NAS) ListDirectory() (*BrowseResponse, error) {
+	return n.ListDirectoryWithParams(nil)
 }
 
 // ListDirectoryWithParams is the same as ListDirectory, but accepts custom parameters
-func ListDirectoryWithParams(sessionID string, params map[string]string) (*NASBrowseResponse, error) {
-	fullAddress := fmt.Sprintf("%s/%s", address, nasURIPath)
+func (n *NAS) ListDirectoryWithParams(params map[string]string) (*BrowseResponse, error) {
+	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasURIPath)
 
 	p := url.Values{}
-	p.Set("sid", sessionID)
+	p.Set("sid", n.SessionID.String())
 	p.Set("sorting", "+filename")
 	p.Set("c", "files")
 	p.Set("a", "browse")
@@ -106,12 +114,12 @@ func ListDirectoryWithParams(sessionID string, params map[string]string) (*NASBr
 
 	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(30)*time.Second)
 	defer cancel()
-	res, err := genericPostRequestWithContext(rctx, fullAddress, p)
+	res, err := request.GenericPostRequestWithContext(rctx, fullAddress, p)
 	if err != nil {
 		return nil, err
 	}
 
-	if !validateHeader(headerJSON, res.Header) {
+	if !request.ValidateHeader(request.HeaderJSON, res.Header) {
 		return nil, errors.New("incorrect response header content-type received")
 	}
 
@@ -123,7 +131,7 @@ func ListDirectoryWithParams(sessionID string, params map[string]string) (*NASBr
 	}
 
 	// parse json
-	var result *NASBrowseResponse
+	var result *BrowseResponse
 	err = json.Unmarshal(d, &result)
 	if err != nil {
 		return nil, err
@@ -132,15 +140,15 @@ func ListDirectoryWithParams(sessionID string, params map[string]string) (*NASBr
 	return result, nil
 }
 
-type NASCreateDirResponse struct {
-	NASDirectory `json:"directory"`
+type CreateDirResponse struct {
+	Directory `json:"directory"`
 }
 
-func CreateDir(sessionID, name, path string) (*NASCreateDirResponse, error) {
-	fullAddress := fmt.Sprintf("%s/%s", address, nasURIPath)
+func (n *NAS) CreateDir(name, path string) (*CreateDirResponse, error) {
+	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasURIPath)
 
 	p := url.Values{}
-	p.Set("sid", sessionID)
+	p.Set("sid", n.SessionID.String())
 	p.Set("path", path)
 	p.Set("name", name)
 	p.Set("parents", "false") // todo, find out
@@ -149,12 +157,12 @@ func CreateDir(sessionID, name, path string) (*NASCreateDirResponse, error) {
 
 	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	defer cancel()
-	res, err := genericPostRequestWithContext(rctx, fullAddress, p)
+	res, err := request.GenericPostRequestWithContext(rctx, fullAddress, p)
 	if err != nil {
 		return nil, err
 	}
 
-	if !validateHeader(headerJSON, res.Header) {
+	if !request.ValidateHeader(request.HeaderJSON, res.Header) {
 		return nil, errors.New("incorrect response header content-type received")
 	}
 
@@ -169,7 +177,7 @@ func CreateDir(sessionID, name, path string) (*NASCreateDirResponse, error) {
 	}
 
 	// parse json
-	var result *NASCreateDirResponse
+	var result *CreateDirResponse
 	err = json.Unmarshal(d, &result)
 	if err != nil {
 		return nil, err
@@ -180,8 +188,8 @@ func CreateDir(sessionID, name, path string) (*NASCreateDirResponse, error) {
 
 // GetFile downloads an object from FRITZ NAS storage
 // Response is the object's data bytes (buffered) or error.
-func GetFile(sessionID string, path string) (io.ReadCloser, error) {
-	fullAddress := fmt.Sprintf("%s/%s", address, nasFileGetPath)
+func (n *NAS) GetFile(sessionID string, path string) (io.ReadCloser, error) {
+	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasFileGetPath)
 
 	p := url.Values{}
 	p.Add("sid", sessionID)
@@ -192,14 +200,10 @@ func GetFile(sessionID string, path string) (io.ReadCloser, error) {
 
 	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(30)*time.Second)
 	defer cancel()
-	resp, err := genericPostRequestWithContext(rctx, fullAddress, p)
+	resp, err := request.GenericPostRequestWithContext(rctx, fullAddress, p)
 	if err != nil {
 		return nil, err
 	}
-
-	// if !validateHeader(headerJSON, resp.Header) {
-	// 	return 0, errors.New("incorrect response header content-type received")
-	// }
 
 	d, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -246,8 +250,8 @@ const (
 	nasResultDirNotExist nasResultCode = "9" // 9 (wrong dir)
 )
 
-func PutFile(sessionID, path string, data io.Reader) (*PutFileResponse, error) {
-	fullAddress := fmt.Sprintf("%s/%s", address, nasFileUploadPath)
+func (n *NAS) PutFile(path string, data io.Reader) (*PutFileResponse, error) {
+	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasFileUploadPath)
 
 	// Parse path into file and dir
 	p := strings.Split(path, "/")
@@ -260,7 +264,7 @@ func PutFile(sessionID, path string, data io.Reader) (*PutFileResponse, error) {
 
 	// We need to insert this into the content type
 	params := make(map[string]string)
-	params["sid"] = sessionID
+	params["sid"] = n.SessionID.String()
 	params["dir"] = dir
 	for key, val := range params {
 		_ = writer.WriteField(key, val)
@@ -289,12 +293,12 @@ func PutFile(sessionID, path string, data io.Reader) (*PutFileResponse, error) {
 	}
 	req.Header.Add("Content-Type", writer.FormDataContentType())
 
-	resp, err := httpRequest(req)
+	resp, err := request.HttpRequest(req)
 	if err != nil {
 		return nil, err
 	}
 
-	if !validateHeader(headerJSON, resp.Header) {
+	if !request.ValidateHeader(request.HeaderJSON, resp.Header) {
 		return nil, errors.New("incorrect response header content-type received")
 	}
 
@@ -314,7 +318,7 @@ func PutFile(sessionID, path string, data io.Reader) (*PutFileResponse, error) {
 	return result, err
 }
 
-type NASRenameResponse struct {
+type RenameResponse struct {
 	RenameCount int
 }
 
@@ -328,11 +332,11 @@ type NASRenameResponse struct {
 // `from` takes the full path to the object
 // `to` takes only object's new filename, without the extension
 // The function returns how many files were updated and an error if any
-func RenameFile(sessionID, from, to string) (int, error) {
-	fullAddress := fmt.Sprintf("%s/%s", address, nasURIPath)
+func (n *NAS) RenameFile(from, to string) (int, error) {
+	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasURIPath)
 
 	p := url.Values{}
-	p.Add("sid", sessionID)
+	p.Add("sid", n.SessionID.String())
 	p.Add("c", "files")
 	p.Add("a", "rename")
 	p.Add("paths[1][path]", from)
@@ -340,12 +344,12 @@ func RenameFile(sessionID, from, to string) (int, error) {
 
 	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	defer cancel()
-	res, err := genericPostRequestWithContext(rctx, fullAddress, p)
+	res, err := request.GenericPostRequestWithContext(rctx, fullAddress, p)
 	if err != nil {
 		return 0, err
 	}
 
-	if !validateHeader(headerJSON, res.Header) {
+	if !request.ValidateHeader(request.HeaderJSON, res.Header) {
 		return 0, errors.New("incorrect response header content-type received")
 	}
 
@@ -360,7 +364,7 @@ func RenameFile(sessionID, from, to string) (int, error) {
 	}
 
 	// parse json
-	var result *NASRenameResponse
+	var result *RenameResponse
 	err = json.Unmarshal(d, &result)
 	if err != nil {
 		return 0, err
@@ -369,14 +373,14 @@ func RenameFile(sessionID, from, to string) (int, error) {
 	return result.RenameCount, nil
 }
 
-type NASDeleteResponse struct {
+type DeleteResponse struct {
 	DeleteCount int
 }
 
 // DeleteObject will delete a file or directory from the NAS.
 // Response contains how many files have been affected and error (if any).
-func DeleteObject(sessionID, path string) (int, error) {
-	fullAddress := fmt.Sprintf("%s/%s", address, nasURIPath)
+func (n *NAS) DeleteObject(sessionID, path string) (int, error) {
+	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasURIPath)
 
 	p := url.Values{}
 	p.Add("sid", sessionID)
@@ -386,12 +390,12 @@ func DeleteObject(sessionID, path string) (int, error) {
 
 	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	defer cancel()
-	res, err := genericPostRequestWithContext(rctx, fullAddress, p)
+	res, err := request.GenericPostRequestWithContext(rctx, fullAddress, p)
 	if err != nil {
 		return 0, err
 	}
 
-	if !validateHeader(headerJSON, res.Header) {
+	if !request.ValidateHeader(request.HeaderJSON, res.Header) {
 		return 0, errors.New("incorrect response header content-type received")
 	}
 
@@ -406,7 +410,7 @@ func DeleteObject(sessionID, path string) (int, error) {
 	}
 
 	// parse json
-	var result *NASDeleteResponse
+	var result *DeleteResponse
 	err = json.Unmarshal(d, &result)
 	if err != nil {
 		return 0, err
@@ -415,14 +419,14 @@ func DeleteObject(sessionID, path string) (int, error) {
 	return result.DeleteCount, nil
 }
 
-type NASMoveResponse struct {
+type MoveResponse struct {
 	MoveCount int
 }
 
 // MoveFile moves a file from source to destination in the NAS
 // This is a separate action and is not the same as rename.
-func MoveFile(sessionID, from, to string) (int, error) {
-	fullAddress := fmt.Sprintf("%s/%s", address, nasURIPath)
+func (n *NAS) MoveFile(sessionID, from, to string) (int, error) {
+	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasURIPath)
 
 	p := url.Values{}
 	p.Add("sid", sessionID)
@@ -433,12 +437,12 @@ func MoveFile(sessionID, from, to string) (int, error) {
 
 	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	defer cancel()
-	res, err := genericPostRequestWithContext(rctx, fullAddress, p)
+	res, err := request.GenericPostRequestWithContext(rctx, fullAddress, p)
 	if err != nil {
 		return 0, err
 	}
 
-	if !validateHeader(headerJSON, res.Header) {
+	if !request.ValidateHeader(request.HeaderJSON, res.Header) {
 		return 0, errors.New("incorrect response header content-type received")
 	}
 
@@ -453,7 +457,7 @@ func MoveFile(sessionID, from, to string) (int, error) {
 	}
 
 	// parse json
-	var result *NASMoveResponse
+	var result *MoveResponse
 	err = json.Unmarshal(d, &result)
 	if err != nil {
 		return 0, err

@@ -4,14 +4,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+
+	"github.com/rumenvasilev/go-fritzos/auth"
+	"github.com/rumenvasilev/go-fritzos/nas"
 )
 
 func main() {
 	username := ""
 	password := ""
 
-	sessionID, err := Auth(username, password)
-	defer Close(sessionID)
+	sessionID, err := auth.Auth(username, password)
+	defer auth.Close(sessionID)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -106,7 +109,12 @@ func main() {
 	// fmt.Println(n)
 
 	// Create Dir
-	r, err := CreateDir(sessionID, "blabla", "/Dokumente")
+	n := &nas.NAS{
+		SessionID: sessionID,
+		Address:   "http://fritz.box",
+	}
+
+	r, err := n.CreateDir("blabla", "/Dokumente")
 	if err != nil {
 		log.Fatalf("Create failed, %v", err)
 	}

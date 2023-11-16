@@ -1,4 +1,4 @@
-package main
+package auth
 
 import (
 	"crypto/md5"
@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"unicode/utf16"
 
+	"github.com/rumenvasilev/go-fritzos/request"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -23,39 +23,45 @@ const (
 	loginPath = "login_sid.lua?version=2"
 )
 
+type SessionID string
+
+func (s *SessionID) String() string {
+	return string(*s)
+}
+
 // Auth will authenticate to the target FRITZOS device using default address
 // and will return either session id, either error.
-func Auth(username, password string) (string, error) {
+func Auth(username, password string) (*SessionID, error) {
 	return AuthWithAddress(address, username, password)
 }
 
-func AuthWithAddress(address, username, password string) (string, error) {
+func AuthWithAddress(address, username, password string) (*SessionID, error) {
 	challenge, err := getChallengeString(address)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	answer, err := solveChallenge(challenge, password)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	return authenticate(address, answer, username)
 }
 
 // Close will logout from the authenticated device
-func Close(sessionID string) error {
-	return CloseWithAddress(address, sessionID)
+func Close(sid *SessionID) error {
+	return CloseWithAddress(address, sid)
 }
 
-func CloseWithAddress(address, sessionID string) error {
+func CloseWithAddress(address string, sid *SessionID) error {
 	fullAddress := fmt.Sprintf("%s/%s", address, loginPath)
 	data := url.Values{}
-	data.Set("logout", sessionID)
+	data.Set("logout", sid.String())
 
 	resp, err := http.PostForm(fullAddress, data)
 	if err != nil || resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("couln't logout session id %q, %w", sessionID, err)
+		return fmt.Errorf("couln't logout session id %q, %w", sid.String(), err)
 	}
 
 	return nil
@@ -86,13 +92,6 @@ type user struct {
 	Last  int    `xml:"last,attr"`
 }
 
-type responseHeader string
-
-const (
-	headerXML  responseHeader = "xml"
-	headerJSON responseHeader = "json"
-)
-
 func getChallengeString(address string) (string, error) {
 	url := fmt.Sprintf("%s/%s", address, loginPath)
 	resp, err := http.Get(url)
@@ -104,8 +103,8 @@ func getChallengeString(address string) (string, error) {
 		return "", fmt.Errorf("couldn't get the challenge, response code was %d", resp.StatusCode)
 	}
 
-	if !validateHeader(headerXML, resp.Header) {
-		return "", fmt.Errorf("expected %s response, but got something else", headerXML)
+	if !request.ValidateHeader(request.HeaderXML, resp.Header) {
+		return "", fmt.Errorf("expected %s response, but got something else", request.HeaderXML)
 	}
 
 	data, err := io.ReadAll(resp.Body)
@@ -179,7 +178,7 @@ func calculateMD5Response(challenge, password string) string {
 
 }
 
-func authenticate(address, challenge, username string) (string, error) {
+func authenticate(address, challenge, username string) (*SessionID, error) {
 	loginURL := fmt.Sprintf("%s/%s", address, loginPath)
 	v := url.Values{}
 	v.Set("username", username)
@@ -187,11 +186,11 @@ func authenticate(address, challenge, username string) (string, error) {
 
 	resp, err := http.PostForm(loginURL, v)
 	if err != nil {
-		return "", fmt.Errorf("something went wrong, %w", err)
+		return nil, fmt.Errorf("something went wrong, %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("server returned non-200 status code -> %d", resp.StatusCode)
+		return nil, fmt.Errorf("server returned non-200 status code -> %d", resp.StatusCode)
 	}
 
 	data, _ := io.ReadAll(resp.Body)
@@ -199,28 +198,13 @@ func authenticate(address, challenge, username string) (string, error) {
 	var session *sessionInfo
 	err = xml.Unmarshal(data, &session)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if session.SID == "" || session.SID == "0000000000000000" {
-		return "", errors.New("login failed, session id is wrong")
+		return nil, errors.New("login failed, session id is wrong")
 	}
 
-	return session.SID, nil
-}
-
-func validateHeader(rh responseHeader, h http.Header) bool {
-	var contentType string
-	switch rh {
-	case headerXML:
-		contentType = "text/xml"
-	case headerJSON:
-		contentType = "application/json; charset=utf-8"
-	default:
-		return false
-	}
-
-	log.Println("Debug:", h.Get("Content-Type"))
-
-	return h.Get("Content-Type") == contentType
+	sid := SessionID(session.SID)
+	return &sid, nil
 }
