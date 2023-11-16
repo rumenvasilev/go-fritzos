@@ -19,23 +19,23 @@ import (
 )
 
 const (
-	address   = "http://fritz.box"
+	Address   = "http://fritz.box"
 	loginPath = "login_sid.lua?version=2"
 )
 
-type SessionID string
+type Session string
 
-func (s *SessionID) String() string {
+func (s *Session) String() string {
 	return string(*s)
 }
 
 // Auth will authenticate to the target FRITZOS device using default address
 // and will return either session id, either error.
-func Auth(username, password string) (*SessionID, error) {
-	return AuthWithAddress(address, username, password)
+func Auth(username, password string) (*Session, error) {
+	return AuthWithAddress(Address, username, password)
 }
 
-func AuthWithAddress(address, username, password string) (*SessionID, error) {
+func AuthWithAddress(address, username, password string) (*Session, error) {
 	challenge, err := getChallengeString(address)
 	if err != nil {
 		return nil, err
@@ -50,11 +50,11 @@ func AuthWithAddress(address, username, password string) (*SessionID, error) {
 }
 
 // Close will logout from the authenticated device
-func Close(sid *SessionID) error {
-	return CloseWithAddress(address, sid)
+func Close(sid *Session) error {
+	return CloseWithAddress(Address, sid)
 }
 
-func CloseWithAddress(address string, sid *SessionID) error {
+func CloseWithAddress(address string, sid *Session) error {
 	fullAddress := fmt.Sprintf("%s/%s", address, loginPath)
 	data := url.Values{}
 	data.Set("logout", sid.String())
@@ -178,7 +178,7 @@ func calculateMD5Response(challenge, password string) string {
 
 }
 
-func authenticate(address, challenge, username string) (*SessionID, error) {
+func authenticate(address, challenge, username string) (*Session, error) {
 	loginURL := fmt.Sprintf("%s/%s", address, loginPath)
 	v := url.Values{}
 	v.Set("username", username)
@@ -205,6 +205,6 @@ func authenticate(address, challenge, username string) (*SessionID, error) {
 		return nil, errors.New("login failed, session id is wrong")
 	}
 
-	sid := SessionID(session.SID)
+	sid := Session(session.SID)
 	return &sid, nil
 }

@@ -17,7 +17,7 @@ func GenericGetRequest(url string) (*http.Response, error) {
 
 // genericGetRequestWithContext is the same as genericGetRequest, but accepts context
 func GenericGetRequestWithContext(ctx context.Context, url string) (*http.Response, error) {
-	// resp, err := http.Get(fmt.Sprintf("%s&sid=%s", url, sessionID))
+	// resp, err := http.Get(fmt.Sprintf("%s&sid=%s", url, Session))
 	rctx, cancel := context.WithTimeout(ctx, time.Duration(30)*time.Second)
 	defer cancel()
 

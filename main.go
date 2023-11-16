@@ -13,16 +13,16 @@ func main() {
 	username := ""
 	password := ""
 
-	sessionID, err := auth.Auth(username, password)
-	defer auth.Close(sessionID)
+	Session, err := auth.Auth(username, password)
+	defer auth.Close(Session)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	log.Println("Login successful! Session ID", sessionID)
+	log.Println("Login successful! Session ID", Session)
 
 	// List all files at the root
-	// res, err := ListDirectory(sessionID)
+	// res, err := ListDirectory(Session)
 	// if err != nil {
 	// 	log.Fatalln(err)
 	// }
@@ -31,7 +31,7 @@ func main() {
 	// params := make(map[string]string)
 	// params["path"] = "/Bilder"
 	// params["limit"] = "100"
-	// res, err := ListDirectoryWithParams(sessionID, params)
+	// res, err := ListDirectoryWithParams(Session, params)
 	// if err != nil {
 	// 	log.Fatalln(err)
 	// }
@@ -57,7 +57,7 @@ func main() {
 	// }
 
 	// Get specific object from the NAS
-	// d, err := GetFile(sessionID, "/Bilder/FRITZ-Picture.jpg")
+	// d, err := GetFile(Session, "/Bilder/FRITZ-Picture.jpg")
 	// if err != nil {
 	// 	log.Fatalln(err)
 	// }
@@ -75,7 +75,7 @@ func main() {
 	// if err != nil {
 	// 	log.Fatalln(err)
 	// }
-	// r, err := PutFile(sessionID, "/Dokumente/2022-0006_Anmeldung_fr_den_Schwimmkurs_Einverstndniserklrung.pdf", data)
+	// r, err := PutFile(Session, "/Dokumente/2022-0006_Anmeldung_fr_den_Schwimmkurs_Einverstndniserklrung.pdf", data)
 	// if err != nil {
 	// 	log.Fatalln("failed uploading the file, %w", err)
 	// }
@@ -86,7 +86,7 @@ func main() {
 	// fmt.Println(string(s))
 
 	// Rename File
-	// r, err := RenameFile(sessionID, "/Dokumente/blabla.pdf", "2022-0006-baba.pdf")
+	// r, err := RenameFile(Session, "/Dokumente/blabla.pdf", "2022-0006-baba.pdf")
 	// if err != nil {
 	// 	log.Fatalf("Rename failed, %v", err)
 	// }
@@ -94,7 +94,7 @@ func main() {
 	// fmt.Println(string(s))
 
 	// Delete File
-	// r, err := DeleteFile(sessionID, "/Dokumente/2022-0006-baba.pdf")
+	// r, err := DeleteFile(Session, "/Dokumente/2022-0006-baba.pdf")
 	// if err != nil {
 	// 	log.Fatalf("Rename failed, %v", err)
 	// }
@@ -102,17 +102,14 @@ func main() {
 	// fmt.Println(string(s))
 
 	// Move File
-	// n, err := MoveFile(sessionID, "/2022-0006_Anmeldung_fr_den_Schwimmkurs_Einverstndniserklrung.pdf", "/Dokumente")
+	// n, err := MoveFile(Session, "/2022-0006_Anmeldung_fr_den_Schwimmkurs_Einverstndniserklrung.pdf", "/Dokumente")
 	// if err != nil {
 	// 	log.Fatalf("Move failed, %v", err)
 	// }
 	// fmt.Println(n)
 
 	// Create Dir
-	n := &nas.NAS{
-		SessionID: sessionID,
-		Address:   "http://fritz.box",
-	}
+	n := nas.New(Session).WithAddress("http://fritz.box")
 
 	r, err := n.CreateDir("blabla", "/Dokumente")
 	if err != nil {

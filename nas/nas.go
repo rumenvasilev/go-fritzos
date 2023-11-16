@@ -25,8 +25,8 @@ const (
 )
 
 type NAS struct {
-	*auth.SessionID
-	Address string
+	session *auth.Session
+	address string
 }
 
 type BrowseResponse struct {
@@ -90,6 +90,18 @@ func (p *Timestamp) UnmarshalJSON(bytes []byte) error {
 	return nil
 }
 
+func New(s *auth.Session) *NAS {
+	return &NAS{
+		session: s,
+		address: auth.Address,
+	}
+}
+
+func (n *NAS) WithAddress(addr string) *NAS {
+	n.address = addr
+	return n
+}
+
 // ListDirectory would call FRITZ API and return the response structure with results
 // or error.
 func (n *NAS) ListDirectory() (*BrowseResponse, error) {
@@ -98,10 +110,10 @@ func (n *NAS) ListDirectory() (*BrowseResponse, error) {
 
 // ListDirectoryWithParams is the same as ListDirectory, but accepts custom parameters
 func (n *NAS) ListDirectoryWithParams(params map[string]string) (*BrowseResponse, error) {
-	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasURIPath)
+	fullAddress := fmt.Sprintf("%s/%s", n.address, nasURIPath)
 
 	p := url.Values{}
-	p.Set("sid", n.SessionID.String())
+	p.Set("sid", n.session.String())
 	p.Set("sorting", "+filename")
 	p.Set("c", "files")
 	p.Set("a", "browse")
@@ -145,10 +157,10 @@ type CreateDirResponse struct {
 }
 
 func (n *NAS) CreateDir(name, path string) (*CreateDirResponse, error) {
-	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasURIPath)
+	fullAddress := fmt.Sprintf("%s/%s", n.address, nasURIPath)
 
 	p := url.Values{}
-	p.Set("sid", n.SessionID.String())
+	p.Set("sid", n.session.String())
 	p.Set("path", path)
 	p.Set("name", name)
 	p.Set("parents", "false") // todo, find out
@@ -188,11 +200,11 @@ func (n *NAS) CreateDir(name, path string) (*CreateDirResponse, error) {
 
 // GetFile downloads an object from FRITZ NAS storage
 // Response is the object's data bytes (buffered) or error.
-func (n *NAS) GetFile(sessionID string, path string) (io.ReadCloser, error) {
-	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasFileGetPath)
+func (n *NAS) GetFile(Session string, path string) (io.ReadCloser, error) {
+	fullAddress := fmt.Sprintf("%s/%s", n.address, nasFileGetPath)
 
 	p := url.Values{}
-	p.Add("sid", sessionID)
+	p.Add("sid", Session)
 	p.Add("script", fmt.Sprintf("/%s", rootAPI))
 	p.Add("c", "files")
 	p.Add("a", "get")
@@ -251,7 +263,7 @@ const (
 )
 
 func (n *NAS) PutFile(path string, data io.Reader) (*PutFileResponse, error) {
-	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasFileUploadPath)
+	fullAddress := fmt.Sprintf("%s/%s", n.address, nasFileUploadPath)
 
 	// Parse path into file and dir
 	p := strings.Split(path, "/")
@@ -264,7 +276,7 @@ func (n *NAS) PutFile(path string, data io.Reader) (*PutFileResponse, error) {
 
 	// We need to insert this into the content type
 	params := make(map[string]string)
-	params["sid"] = n.SessionID.String()
+	params["sid"] = n.session.String()
 	params["dir"] = dir
 	for key, val := range params {
 		_ = writer.WriteField(key, val)
@@ -333,10 +345,10 @@ type RenameResponse struct {
 // `to` takes only object's new filename, without the extension
 // The function returns how many files were updated and an error if any
 func (n *NAS) RenameFile(from, to string) (int, error) {
-	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasURIPath)
+	fullAddress := fmt.Sprintf("%s/%s", n.address, nasURIPath)
 
 	p := url.Values{}
-	p.Add("sid", n.SessionID.String())
+	p.Add("sid", n.session.String())
 	p.Add("c", "files")
 	p.Add("a", "rename")
 	p.Add("paths[1][path]", from)
@@ -379,11 +391,11 @@ type DeleteResponse struct {
 
 // DeleteObject will delete a file or directory from the NAS.
 // Response contains how many files have been affected and error (if any).
-func (n *NAS) DeleteObject(sessionID, path string) (int, error) {
-	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasURIPath)
+func (n *NAS) DeleteObject(Session, path string) (int, error) {
+	fullAddress := fmt.Sprintf("%s/%s", n.address, nasURIPath)
 
 	p := url.Values{}
-	p.Add("sid", sessionID)
+	p.Add("sid", Session)
 	p.Add("c", "files")
 	p.Add("a", "delete")
 	p.Add("paths[1]", path)
@@ -425,11 +437,11 @@ type MoveResponse struct {
 
 // MoveFile moves a file from source to destination in the NAS
 // This is a separate action and is not the same as rename.
-func (n *NAS) MoveFile(sessionID, from, to string) (int, error) {
-	fullAddress := fmt.Sprintf("%s/%s", n.Address, nasURIPath)
+func (n *NAS) MoveFile(Session, from, to string) (int, error) {
+	fullAddress := fmt.Sprintf("%s/%s", n.address, nasURIPath)
 
 	p := url.Values{}
-	p.Add("sid", sessionID)
+	p.Add("sid", Session)
 	p.Add("c", "files")
 	p.Add("a", "move")
 	p.Add("paths[1]", from)
