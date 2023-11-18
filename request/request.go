@@ -11,16 +11,15 @@ import (
 // genericGetRequest takes session id as parameter and calls the target endpoint
 // Result is plain string, to facilitate development of new requests and structs.
 func GenericGetRequest(url string) (*http.Response, error) {
-	return GenericGetRequestWithContext(context.Background(), url)
+	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(30)*time.Second)
+	defer cancel()
+	return GenericGetRequestWithContext(rctx, url)
 }
 
 // genericGetRequestWithContext is the same as genericGetRequest, but accepts context
 func GenericGetRequestWithContext(ctx context.Context, url string) (*http.Response, error) {
 	// resp, err := http.Get(fmt.Sprintf("%s&sid=%s", url, Session))
-	rctx, cancel := context.WithTimeout(ctx, time.Duration(30)*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(rctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}

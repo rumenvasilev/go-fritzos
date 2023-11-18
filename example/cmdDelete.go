@@ -17,7 +17,7 @@ func NewDeleteCommand() *DeleteCommand {
 
 	gc.fs.StringVar(&gc.username, "username", "", "Provide username for authentication")
 	gc.fs.StringVar(&gc.password, "password", "", "Provide password for authentication")
-	gc.fs.StringVar(&gc.path, "path", "", "Provide path (remote) to the file you want to delete")
+	gc.fs.StringVar(&gc.remotePath, "remote-path", "", "Provide path (remote) to the file you want to delete")
 
 	return gc
 }
@@ -25,9 +25,9 @@ func NewDeleteCommand() *DeleteCommand {
 type DeleteCommand struct {
 	fs *flag.FlagSet
 
-	username string
-	password string
-	path     string
+	username   string
+	password   string
+	remotePath string
 }
 
 func (g *DeleteCommand) Name() string {
@@ -43,7 +43,7 @@ func (g *DeleteCommand) Run() error {
 }
 
 func exampleDelete(g *DeleteCommand) error {
-	if g.path == "" {
+	if g.remotePath == "" {
 		return errors.New("Please specify -path")
 	}
 
@@ -59,7 +59,7 @@ func exampleDelete(g *DeleteCommand) error {
 	n := nas.New(sess).WithAddress("http://fritz.box")
 
 	// Delete File
-	r, err := n.DeleteObject(g.path)
+	r, err := n.DeleteObject(g.remotePath)
 	if err != nil {
 		return fmt.Errorf("Delete failed, %v", err)
 	}

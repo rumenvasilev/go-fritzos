@@ -119,14 +119,14 @@ type user struct {
 }
 
 func getChallengeString(address string) (string, error) {
-	url := fmt.Sprintf("%s/%s", address, loginPath)
-	resp, err := http.Get(url)
-	if err != nil {
-		return "", err
-	}
+	fullAddress := fmt.Sprintf("%s/%s", address, loginPath)
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("couldn't get the challenge, response code was %d", resp.StatusCode)
+	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(30)*time.Second)
+	defer cancel()
+
+	resp, err := request.GenericGetRequestWithContext(rctx, fullAddress)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("couldn't get the challenge, %w", err)
 	}
 
 	if !request.ValidateHeader(request.HeaderXML, resp.Header) {
@@ -137,6 +137,7 @@ func getChallengeString(address string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	resp.Body.Close()
 
 	var session *sessionInfo
 	err = xml.Unmarshal(data, &session)
@@ -201,18 +202,18 @@ func calculateMD5Response(challenge, password string) string {
 }
 
 func authenticate(address, challenge, username string) (*Session, error) {
-	loginURL := fmt.Sprintf("%s/%s", address, loginPath)
-	v := url.Values{}
-	v.Set("username", username)
-	v.Set("response", challenge)
+	fullAddress := fmt.Sprintf("%s/%s", address, loginPath)
 
-	resp, err := http.PostForm(loginURL, v)
-	if err != nil {
+	p := url.Values{}
+	p.Set("username", username)
+	p.Set("response", challenge)
+
+	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(30)*time.Second)
+	defer cancel()
+
+	resp, err := request.GenericPostRequestWithContext(rctx, fullAddress, strings.NewReader(p.Encode()))
+	if err != nil || resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("something went wrong, %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server returned non-200 status code -> %d", resp.StatusCode)
 	}
 
 	data, err := io.ReadAll(resp.Body)

@@ -57,7 +57,7 @@ func exampleCreateDir(g *CreateDirCommand) error {
 	if err != nil {
 		return err
 	}
-	// defer sess.Close()
+	defer sess.Close()
 
 	log.Println("Login successful! Session ID", sess)
 
