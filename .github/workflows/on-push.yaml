@@ -3,8 +3,7 @@ name: Build
 on: [push]
 
 jobs:
-  build:
-
+  test:
     runs-on: ubuntu-latest
 
     permissions:
@@ -21,21 +20,26 @@ jobs:
       - name: Display Go version
         run: go version
 
-      - name: Build
-        run: go build .
+      - name: Build example
+        run: go build -o go-fritzos example/*
       
-      - name: Lint
-        uses: golangci/golangci-lint-action@3a919529898de77ec3da873e3063ca4b10e7f5cc #v3
-        with:
-          version: v1.55.2
-
       - name: Test
         run: go test -v -race ./...
   
       - name: Create coverage report
-        run: go test -coverprofile=coverage.out
+        run: go test -coverprofile=coverage.out ./...
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@eaaf4bedf32dbdc6b720b63067d99c4d77d6047d #v3
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Lint
+        uses: golangci/golangci-lint-action@3a919529898de77ec3da873e3063ca4b10e7f5cc #v3
+        with:
+          version: v1.55.2

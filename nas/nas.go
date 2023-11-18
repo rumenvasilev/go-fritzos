@@ -29,6 +29,18 @@ type NAS struct {
 	address string
 }
 
+func New(s *auth.Session) *NAS {
+	return &NAS{
+		session: s,
+		address: auth.Address,
+	}
+}
+
+func (n *NAS) WithAddress(addr string) *NAS {
+	n.address = addr
+	return n
+}
+
 type BrowseResponse struct {
 	DiskInfo    DiskInfo
 	Files       []File
@@ -90,26 +102,9 @@ func (p *Timestamp) UnmarshalJSON(bytes []byte) error {
 	return nil
 }
 
-func New(s *auth.Session) *NAS {
-	return &NAS{
-		session: s,
-		address: auth.Address,
-	}
-}
-
-func (n *NAS) WithAddress(addr string) *NAS {
-	n.address = addr
-	return n
-}
-
 // ListDirectory would call FRITZ API and return the response structure with results
 // or error.
-func (n *NAS) ListDirectory() (*BrowseResponse, error) {
-	return n.ListDirectoryWithParams(nil)
-}
-
-// ListDirectoryWithParams is the same as ListDirectory, but accepts custom parameters
-func (n *NAS) ListDirectoryWithParams(params map[string]string) (*BrowseResponse, error) {
+func (n *NAS) ListDirectory(path string) (*BrowseResponse, error) {
 	fullAddress := fmt.Sprintf("%s/%s", n.address, nasURIPath)
 
 	p := url.Values{}
@@ -117,27 +112,18 @@ func (n *NAS) ListDirectoryWithParams(params map[string]string) (*BrowseResponse
 	p.Set("sorting", "+filename")
 	p.Set("c", "files")
 	p.Set("a", "browse")
+	p.Set("limit", "100")
 
-	if len(params) > 0 {
-		for k, v := range params {
-			p.Set(k, v)
-		}
+	// If no path is provided, we list the root of the storage
+	if path == "" {
+		path = "/"
 	}
+	p.Set("path", path)
 
 	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(30)*time.Second)
 	defer cancel()
-	res, err := request.GenericPostRequestWithContext(rctx, fullAddress, p)
-	if err != nil {
-		return nil, err
-	}
 
-	if !request.ValidateHeader(request.HeaderJSON, res.Header) {
-		return nil, errors.New("incorrect response header content-type received")
-	}
-
-	d, err := io.ReadAll(res.Body)
-	defer res.Body.Close()
-
+	d, err := execute(rctx, fullAddress, strings.NewReader(p.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -145,11 +131,7 @@ func (n *NAS) ListDirectoryWithParams(params map[string]string) (*BrowseResponse
 	// parse json
 	var result *BrowseResponse
 	err = json.Unmarshal(d, &result)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return result, err
 }
 
 type CreateDirResponse struct {
@@ -169,42 +151,25 @@ func (n *NAS) CreateDir(name, path string) (*CreateDirResponse, error) {
 
 	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	defer cancel()
-	res, err := request.GenericPostRequestWithContext(rctx, fullAddress, p)
+
+	d, err := execute(rctx, fullAddress, strings.NewReader(p.Encode()))
 	if err != nil {
 		return nil, err
-	}
-
-	if !request.ValidateHeader(request.HeaderJSON, res.Header) {
-		return nil, errors.New("incorrect response header content-type received")
-	}
-
-	d, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-	res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("return status code %d, response: %q", res.StatusCode, string(d))
 	}
 
 	// parse json
 	var result *CreateDirResponse
 	err = json.Unmarshal(d, &result)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return result, err
 }
 
 // GetFile downloads an object from FRITZ NAS storage
 // Response is the object's data bytes (buffered) or error.
-func (n *NAS) GetFile(Session string, path string) (io.ReadCloser, error) {
+func (n *NAS) GetFile(path string) (io.ReadCloser, error) {
 	fullAddress := fmt.Sprintf("%s/%s", n.address, nasFileGetPath)
 
 	p := url.Values{}
-	p.Add("sid", Session)
+	p.Add("sid", n.session.String())
 	p.Add("script", fmt.Sprintf("/%s", rootAPI))
 	p.Add("c", "files")
 	p.Add("a", "get")
@@ -212,7 +177,7 @@ func (n *NAS) GetFile(Session string, path string) (io.ReadCloser, error) {
 
 	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(30)*time.Second)
 	defer cancel()
-	resp, err := request.GenericPostRequestWithContext(rctx, fullAddress, p)
+	resp, err := request.GenericPostRequestWithContext(rctx, fullAddress, strings.NewReader(p.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +189,16 @@ func (n *NAS) GetFile(Session string, path string) (io.ReadCloser, error) {
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("return status code %d, response: %q", resp.StatusCode, string(d))
+		// extract the error from the body
+		var e struct {
+			Err SystemError `json:"error"`
+		}
+		errU := json.Unmarshal(d, &e)
+		if errU != nil {
+			return nil, fmt.Errorf("couldn't unmarshal error response, %w", err)
+		}
+
+		return nil, &e.Err
 	}
 
 	return io.NopCloser(bytes.NewReader(d)), nil
@@ -250,16 +224,16 @@ type PutFileResponse struct {
 type nasUploadResult string
 
 const (
-	nasUploadFail nasUploadResult = "0"
-	nasUploadOK   nasUploadResult = "1"
+	UploadResultFail nasUploadResult = "0"
+	UploadResultOK   nasUploadResult = "1"
 )
 
 type nasResultCode string
 
 const (
-	nasResultOK          nasResultCode = "0" // 0 OK, even if no input is passed
-	nasResultNoSession   nasResultCode = "5" // 5 (fileame provided, nothing else)
-	nasResultDirNotExist nasResultCode = "9" // 9 (wrong dir)
+	ResultCodeOK          nasResultCode = "0" // 0 OK, even if no input is passed
+	ResultCodeNoSession   nasResultCode = "5" // 5 (fileame provided, nothing else)
+	ResultCodeDirNotExist nasResultCode = "9" // 9 (wrong dir)
 )
 
 func (n *NAS) PutFile(path string, data io.Reader) (*PutFileResponse, error) {
@@ -321,7 +295,16 @@ func (n *NAS) PutFile(path string, data io.Reader) (*PutFileResponse, error) {
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("return status code %d, response: %q", resp.StatusCode, string(d))
+		// extract the error from the body
+		var e struct {
+			Err SystemError `json:"error"`
+		}
+		errU := json.Unmarshal(d, &e)
+		if errU != nil {
+			return nil, fmt.Errorf("couldn't unmarshal error response, %w", err)
+		}
+
+		return nil, &e.Err
 	}
 
 	// parse JSON response
@@ -340,132 +323,107 @@ type RenameResponse struct {
 // c=files&
 // a=rename
 
-// RenameFile will rename a file in the NAS
-// `from` takes the full path to the object
-// `to` takes only object's new filename, without the extension
-// The function returns how many files were updated and an error if any
-func (n *NAS) RenameFile(from, to string) (int, error) {
+// RenameInput is the input struct holding parameters for RenameObject.
+type RenameInput struct {
+	From string
+	To   string
+}
+
+// RenameObject renames files and/or directories in the NAS.
+// It takes variadic slice of RenameInput{}, where its fields
+// could represent file and/or directory.
+// Response contains how many files have been affected and an error (if any).
+func (n *NAS) RenameObject(params []*RenameInput) (int, error) {
+	if len(params) == 0 {
+		return 0, errors.New("no parameters supplied, cannot execute RenameObject command")
+	}
+
 	fullAddress := fmt.Sprintf("%s/%s", n.address, nasURIPath)
 
 	p := url.Values{}
 	p.Add("sid", n.session.String())
 	p.Add("c", "files")
 	p.Add("a", "rename")
-	p.Add("paths[1][path]", from)
-	p.Add("paths[1][newName]", to)
+
+	for k, v := range params {
+		p.Add(fmt.Sprintf("paths[%d][path]", k+1), v.From)
+		p.Add(fmt.Sprintf("paths[%d][newName]", k+1), v.To)
+	}
 
 	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	defer cancel()
-	res, err := request.GenericPostRequestWithContext(rctx, fullAddress, p)
+
+	d, err := execute(rctx, fullAddress, strings.NewReader(p.Encode()))
 	if err != nil {
 		return 0, err
-	}
-
-	if !request.ValidateHeader(request.HeaderJSON, res.Header) {
-		return 0, errors.New("incorrect response header content-type received")
-	}
-
-	d, err := io.ReadAll(res.Body)
-	if err != nil {
-		return 0, err
-	}
-	res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("return status code %d, response: %q", res.StatusCode, string(d))
 	}
 
 	// parse json
-	var result *RenameResponse
+	var result RenameResponse
 	err = json.Unmarshal(d, &result)
-	if err != nil {
-		return 0, err
-	}
-
-	return result.RenameCount, nil
+	return result.RenameCount, err
 }
 
 type DeleteResponse struct {
 	DeleteCount int
 }
 
-// DeleteObject will delete a file or directory from the NAS.
-// Response contains how many files have been affected and error (if any).
-func (n *NAS) DeleteObject(Session, path string) (int, error) {
+// DeleteObject deletes files and/or directories from the NAS.
+// It takes variadic `paths` string parameter, representing file(s) and/or directory(ies)
+// that will be deleted from the storage of the NAS.
+// Response contains how many files have been affected and an error (if any).
+func (n *NAS) DeleteObject(paths ...string) (int, error) {
 	fullAddress := fmt.Sprintf("%s/%s", n.address, nasURIPath)
 
 	p := url.Values{}
-	p.Add("sid", Session)
+	p.Add("sid", n.session.String())
 	p.Add("c", "files")
 	p.Add("a", "delete")
-	p.Add("paths[1]", path)
+
+	for k, v := range paths {
+		p.Add(fmt.Sprintf("paths[%d]", k+1), v)
+	}
 
 	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	defer cancel()
-	res, err := request.GenericPostRequestWithContext(rctx, fullAddress, p)
+
+	d, err := execute(rctx, fullAddress, strings.NewReader(p.Encode()))
 	if err != nil {
 		return 0, err
-	}
-
-	if !request.ValidateHeader(request.HeaderJSON, res.Header) {
-		return 0, errors.New("incorrect response header content-type received")
-	}
-
-	d, err := io.ReadAll(res.Body)
-	if err != nil {
-		return 0, err
-	}
-	res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("return status code %d, response: %q", res.StatusCode, string(d))
 	}
 
 	// parse json
-	var result *DeleteResponse
+	var result DeleteResponse
 	err = json.Unmarshal(d, &result)
-	if err != nil {
-		return 0, err
-	}
-
-	return result.DeleteCount, nil
+	return result.DeleteCount, err
 }
 
 type MoveResponse struct {
 	MoveCount int
 }
 
-// MoveFile moves a file from source to destination in the NAS
-// This is a separate action and is not the same as rename.
-func (n *NAS) MoveFile(Session, from, to string) (int, error) {
+// MoveObject moves files and or directories from source to destination within the NAS.
+// It takes `dest` and a variadic `paths` (a.k.a the source paths to move) string parameter, representing file(s) and/or directory(ies).
+// This is a separate action from rename.
+func (n *NAS) MoveObject(dest string, paths ...string) (int, error) {
 	fullAddress := fmt.Sprintf("%s/%s", n.address, nasURIPath)
 
 	p := url.Values{}
-	p.Add("sid", Session)
+	p.Add("sid", n.session.String())
 	p.Add("c", "files")
 	p.Add("a", "move")
-	p.Add("paths[1]", from)
-	p.Add("target", to)
+	p.Add("target", dest)
+
+	for k, v := range paths {
+		p.Add(fmt.Sprintf("paths[%d]", k+1), v)
+	}
 
 	rctx, cancel := context.WithTimeout(context.Background(), time.Duration(60)*time.Second)
 	defer cancel()
-	res, err := request.GenericPostRequestWithContext(rctx, fullAddress, p)
+
+	d, err := execute(rctx, fullAddress, strings.NewReader(p.Encode()))
 	if err != nil {
 		return 0, err
-	}
-
-	if !request.ValidateHeader(request.HeaderJSON, res.Header) {
-		return 0, errors.New("incorrect response header content-type received")
-	}
-
-	d, err := io.ReadAll(res.Body)
-	if err != nil {
-		return 0, err
-	}
-	res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("return status code %d, response: %q", res.StatusCode, string(d))
 	}
 
 	// parse json
@@ -476,4 +434,37 @@ func (n *NAS) MoveFile(Session, from, to string) (int, error) {
 	}
 
 	return result.MoveCount, nil
+}
+
+// execute will call the API server
+func execute(ctx context.Context, addr string, body io.Reader) ([]byte, error) {
+	res, err := request.GenericPostRequestWithContext(ctx, addr, body)
+	if err != nil {
+		return nil, err
+	}
+
+	if !request.ValidateHeader(request.HeaderJSON, res.Header) {
+		return nil, errors.New("incorrect response header content-type received")
+	}
+
+	d, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		// extract the error from the body
+		var e struct {
+			Err SystemError `json:"error"`
+		}
+		errU := json.Unmarshal(d, &e)
+		if errU != nil {
+			return nil, fmt.Errorf("couldn't unmarshal error response, %w", err)
+		}
+
+		return nil, &e.Err
+	}
+
+	return d, nil
 }

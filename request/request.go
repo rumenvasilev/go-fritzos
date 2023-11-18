@@ -2,10 +2,9 @@ package request
 
 import (
 	"context"
+	"io"
 	"log"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 )
 
@@ -31,13 +30,13 @@ func GenericGetRequestWithContext(ctx context.Context, url string) (*http.Respon
 
 // genericPostRequest takes session id as parameter and calls the target endpoint
 // Result is plain string, to facilitate development of new requests and structs.
-func GenericPostRequest(url string, params url.Values) (*http.Response, error) {
-	return GenericPostRequestWithContext(context.Background(), url, params)
+func GenericPostRequest(url string, body io.Reader) (*http.Response, error) {
+	return GenericPostRequestWithContext(context.Background(), url, body)
 }
 
 // genericPostRequestWithContext is the same as genericPostRequest, but accepts context
-func GenericPostRequestWithContext(ctx context.Context, url string, params url.Values) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(params.Encode()))
+func GenericPostRequestWithContext(ctx context.Context, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return nil, err
 	}
@@ -54,20 +53,20 @@ func HttpRequest(req *http.Request) (*http.Response, error) {
 	return c.Do(req)
 }
 
-type ResponseHeader string
+type ContentType string
 
 const (
-	HeaderXML  ResponseHeader = "xml"
-	HeaderJSON ResponseHeader = "json"
+	HeaderXML  ContentType = "text/xml"
+	HeaderJSON ContentType = "application/json; charset=utf-8"
 )
 
-func ValidateHeader(rh ResponseHeader, h http.Header) bool {
+func ValidateHeader(ct ContentType, h http.Header) bool {
 	var contentType string
-	switch rh {
+	switch ct {
 	case HeaderXML:
-		contentType = "text/xml"
+		contentType = string(HeaderXML)
 	case HeaderJSON:
-		contentType = "application/json; charset=utf-8"
+		contentType = string(HeaderJSON)
 	default:
 		return false
 	}

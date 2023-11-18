@@ -1,60 +1,66 @@
 {
     "diskInfo": {
-        "used": 198988000,
-        "total": 3362490000,
-        "free": 3163500000
+        "used": 1.99029e+08,
+        "total": 3.36249e+09,
+        "free": 3.16346e+09
     },
-    "files": [],
+    "files": [
+        {
+            "path": "\/Dokumente\/FRITZ-NAS.txt",
+            "shared": false,
+            "storageType": "internal_storage",
+            "type": "document",
+            "timestamp": 1322694000,
+            "filename": "FRITZ-NAS.txt",
+            "size": 6640
+        },
+        {
+            "path": "\/Dokumente\/FRITZ-Picture.jpg",
+            "shared": false,
+            "width": 640,
+            "storageType": "internal_storage",
+            "type": "picture",
+            "height": 400,
+            "timestamp": 1700084400,
+            "filename": "FRITZ-Picture.jpg",
+            "size": 30192
+        },
+        {
+            "path": "\/Dokumente\/Produkthandbuch.html",
+            "shared": false,
+            "storageType": "internal_storage",
+            "type": "document",
+            "timestamp": 1700178780,
+            "filename": "Produkthandbuch.html",
+            "size": 634
+        }
+    ],
     "directories": [
         {
-            "path": "/Bilder",
+            "path": "\/Dokumente\/blabla",
             "shared": false,
             "storageType": "internal_storage",
             "type": "directory",
-            "timestamp": 1700007000,
-            "filename": "Bilder"
+            "timestamp": 1700224620,
+            "filename": "blabla"
         },
         {
-            "path": "/Dokumente",
+            "path": "\/Dokumente\/testing",
             "shared": false,
             "storageType": "internal_storage",
             "type": "directory",
-            "timestamp": 1371816900,
-            "filename": "Dokumente"
-        },
-        {
-            "path": "/FRITZ",
-            "shared": false,
-            "storageType": "internal_storage",
-            "type": "directory",
-            "timestamp": 1694135340,
-            "filename": "FRITZ"
-        },
-        {
-            "path": "/Musik",
-            "shared": false,
-            "storageType": "internal_storage",
-            "type": "directory",
-            "timestamp": 1371820680,
-            "filename": "Musik"
-        },
-        {
-            "path": "/Videos",
-            "shared": false,
-            "storageType": "internal_storage",
-            "type": "directory",
-            "timestamp": 1371820680,
-            "filename": "Videos"
+            "timestamp": 1700177880,
+            "filename": "testing"
         }
     ],
     "writeRight": true,
     "browse": {
-        "path": "/",
+        "path": "\/Dokumente",
         "index": 1,
         "totalCount": 5,
         "finished": true,
         "mode": "file",
-        "limit": 50,
+        "limit": 100,
         "sorting": "+filename"
     }
 }

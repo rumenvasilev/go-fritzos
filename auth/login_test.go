@@ -31,3 +31,12 @@ func Test_solveChallenge(t *testing.T) {
 		is.Equal(got, want)
 	})
 }
+
+func Test_CloseWithAddress(t *testing.T) {
+	is := is.New(t)
+	s := Session("2c21f7f4f060848e")
+	g := &s
+	err := g.CloseWithAddress("http://127.0.0.1:47862")
+	is.True(err != nil)
+	is.Equal(err.Error(), "couldn't close session, Post \"http://127.0.0.1:47862/login_sid.lua?version=2\": dial tcp 127.0.0.1:47862: connect: connection refused")
+}
